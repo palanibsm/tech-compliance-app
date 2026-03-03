@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+data/*.xlsx
+data/*.xls
+data/*.csv
+output/*.xlsx
+output/*.csv
+*.db
+.streamlit/secrets.toml
