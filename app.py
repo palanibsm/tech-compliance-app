@@ -311,15 +311,15 @@ with tabs[1]:
             # Download cleaned file
             st.divider()
             st.subheader("Download Cleaned Data")
-            st.caption("Exports as CSV (no Excel row limit). Open in Excel via Data → From Text/CSV.")
+            st.caption("Exports as Excel. Auto-splits into multiple tabs if rows exceed 1,048,575.")
             if st.button("Prepare Download", key="prepare_clean_download"):
-                with st.spinner("Preparing CSV..."):
-                    csv_bytes = st.session_state.cleaned_df.write_csv().encode("utf-8")
+                with st.spinner("Preparing Excel file..."):
+                    xlsx_bytes = generate_report({"Device42 Cleaned": st.session_state.cleaned_df})
                     st.download_button(
-                        label="⬇️  Download device42_cleaned.csv",
-                        data=csv_bytes,
-                        file_name="device42_cleaned.csv",
-                        mime="text/csv",
+                        label="⬇️  Download device42_cleaned.xlsx",
+                        data=xlsx_bytes,
+                        file_name="device42_cleaned.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                     )
 
