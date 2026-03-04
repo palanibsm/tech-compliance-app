@@ -2,25 +2,41 @@
 Data cleaning module.
 Filters hostnames, removes non-core software entries, deduplicates,
 and adds a normalised tech_key for matching.
+
+All functions accept explicit rule parameters so the UI can override
+the defaults from config without modifying any files.
 """
 import polars as pl
 from config import HOSTNAME_PREFIXES, EXCLUDE_PATTERNS
 
 
-def filter_hostnames(df: pl.DataFrame, hostname_col: str = "hostname") -> pl.DataFrame:
-    """Keep only hostnames starting with P or D (case-insensitive)."""
-    prefix_pattern = "^[" + "".join(HOSTNAME_PREFIXES).upper() + "]"
+def filter_hostnames(
+    df: pl.DataFrame,
+    prefixes: list[str] | None = None,
+    hostname_col: str = "hostname",
+) -> pl.DataFrame:
+    """Keep only hostnames whose first character matches one of `prefixes`."""
+    if prefixes is None:
+        prefixes = list(HOSTNAME_PREFIXES)
+    chars = "".join(p[0].upper() for p in prefixes if p.strip())
+    pattern = f"^[{chars}]"
     return df.filter(
-        pl.col(hostname_col).str.to_uppercase().str.contains(prefix_pattern)
+        pl.col(hostname_col).str.to_uppercase().str.contains(pattern)
     )
 
 
-def remove_excluded_software(df: pl.DataFrame, software_col: str = "software_name") -> pl.DataFrame:
-    """
-    Remove KB patches, hotfixes, agents, and other non-core software entries.
-    Patterns are defined in config.EXCLUDE_PATTERNS.
-    """
-    combined = "|".join(EXCLUDE_PATTERNS)
+def remove_excluded_software(
+    df: pl.DataFrame,
+    patterns: list[str] | None = None,
+    software_col: str = "software_name",
+) -> pl.DataFrame:
+    """Remove rows whose software name matches any of `patterns` (regex, case-insensitive)."""
+    if patterns is None:
+        patterns = EXCLUDE_PATTERNS
+    active = [p.strip() for p in patterns if p.strip()]
+    if not active:
+        return df
+    combined = "|".join(active)
     return df.filter(
         ~pl.col(software_col).str.to_lowercase().str.contains(combined)
     )
@@ -55,28 +71,34 @@ def add_tech_key(
     )
 
 
-def clean_device42(df: pl.DataFrame) -> pl.DataFrame:
+def clean_device42(
+    df: pl.DataFrame,
+    hostname_prefixes: list[str] | None = None,
+    exclude_patterns: list[str] | None = None,
+) -> tuple[pl.DataFrame, dict]:
     """
-    Full cleaning pipeline for Device42 data:
-    1. Filter to P/D hostnames
-    2. Remove excluded software
-    3. Deduplicate
-    4. Add tech_key
+    Full cleaning pipeline for Device42 data.
+    Returns (cleaned_df, step_stats) so the UI can show per-step row counts.
+
+    Steps:
+      1. Filter to allowed hostname prefixes
+      2. Remove excluded software patterns
+      3. Deduplicate
+      4. Add tech_key
     """
-    df = filter_hostnames(df)
-    df = remove_excluded_software(df)
+    stats = {"raw": len(df)}
+
+    df = filter_hostnames(df, prefixes=hostname_prefixes)
+    stats["after_hostname_filter"] = len(df)
+
+    df = remove_excluded_software(df, patterns=exclude_patterns)
+    stats["after_software_filter"] = len(df)
+
     df = deduplicate(df)
+    stats["after_dedup"] = len(df)
+
     df = add_tech_key(df)
-    return df
+    stats["unique_hostnames"]    = df["hostname"].n_unique() if "hostname" in df.columns else 0
+    stats["unique_technologies"] = df["software_name"].n_unique() if "software_name" in df.columns else 0
 
-
-def get_cleaning_stats(raw: pl.DataFrame, cleaned: pl.DataFrame) -> dict:
-    """Return a summary of what was removed during cleaning."""
-    return {
-        "raw_records": len(raw),
-        "cleaned_records": len(cleaned),
-        "removed": len(raw) - len(cleaned),
-        "removal_pct": round((len(raw) - len(cleaned)) / max(len(raw), 1) * 100, 1),
-        "unique_hostnames": cleaned["hostname"].n_unique() if "hostname" in cleaned.columns else 0,
-        "unique_technologies": cleaned["software_name"].n_unique() if "software_name" in cleaned.columns else 0,
-    }
+    return df, stats

@@ -10,7 +10,7 @@ import streamlit as st
 
 from config import get_azure_config
 from db.store import register, reset
-from modules.cleaner import clean_device42, get_cleaning_stats
+from modules.cleaner import clean_device42
 from modules.compliance import (
     build_compliance_summary,
     check_ea_gaps,
@@ -210,39 +210,118 @@ with tabs[1]:
     else:
         raw_df = st.session_state.device42_df
         st.metric("Raw records loaded", f"{len(raw_df):,}")
+        st.divider()
 
-        st.markdown(
-            "The pipeline will:\n"
-            "- Keep only hostnames starting with **P** or **D**\n"
-            "- Remove KB patches, hotfixes, security/cumulative updates\n"
-            "- Deduplicate rows\n"
-            "- Add a normalised `tech_key` (name + version, lowercase)"
-        )
+        # ── Cleaning Rules Editor ─────────────────────────────────────────────
+        st.subheader("Cleaning Rules")
+        st.caption("Edit these rules before running. Changes only take effect when you click Run.")
 
+        rule_col1, rule_col2 = st.columns([1, 2])
+
+        with rule_col1:
+            st.markdown("**Hostname Prefixes to Keep**")
+            st.caption("Only hostnames starting with these letters will be included. Comma-separated.")
+            prefix_input = st.text_input(
+                "Prefixes",
+                value="P, D",
+                key="prefix_input",
+                label_visibility="collapsed",
+            )
+            hostname_prefixes = [p.strip() for p in prefix_input.split(",") if p.strip()]
+            st.caption(f"Active: {' · '.join(hostname_prefixes)}")
+
+        with rule_col2:
+            st.markdown("**Software Exclusion Patterns** (regex, one per line, case-insensitive)")
+            st.caption("Rows whose software name matches any pattern will be removed.")
+            default_patterns = "\n".join([
+                r"^kb\d+",
+                r"hotfix",
+                r"security update",
+                r"cumulative update",
+                r"update rollup",
+                r"service pack",
+                r"malicious software removal",
+                r"windows defender update",
+                r"definition update",
+            ])
+            pattern_input = st.text_area(
+                "Patterns",
+                value=default_patterns,
+                height=200,
+                key="pattern_input",
+                label_visibility="collapsed",
+            )
+            exclude_patterns = [p.strip() for p in pattern_input.splitlines() if p.strip()]
+            st.caption(f"{len(exclude_patterns)} active pattern(s)")
+
+        st.divider()
+
+        # ── Run Pipeline ──────────────────────────────────────────────────────
         if st.button("Run Cleaning Pipeline", type="primary"):
             with st.spinner("Cleaning data..."):
                 try:
-                    cleaned = clean_device42(raw_df)
+                    cleaned, stats = clean_device42(
+                        raw_df,
+                        hostname_prefixes=hostname_prefixes,
+                        exclude_patterns=exclude_patterns,
+                    )
                     st.session_state.cleaned_df = cleaned
                     register("device42_clean", cleaned)
-                    stats = get_cleaning_stats(raw_df, cleaned)
-
-                    c1, c2, c3, c4 = st.columns(4)
-                    c1.metric("After Cleaning",    f"{stats['cleaned_records']:,}")
-                    c2.metric("Removed",           f"{stats['removed']:,}  ({stats['removal_pct']}%)")
-                    c3.metric("Unique Hostnames",   f"{stats['unique_hostnames']:,}")
-                    c4.metric("Unique Technologies", f"{stats['unique_technologies']:,}")
+                    st.session_state.clean_stats = stats
                     st.success("Cleaning complete.")
                 except Exception as e:
                     st.error(str(e))
                     st.code(traceback.format_exc())
 
+        # ── Results ───────────────────────────────────────────────────────────
         if st.session_state.cleaned_df is not None:
+            stats = st.session_state.get("clean_stats", {})
+
+            st.subheader("Cleaning Results")
+
+            # Per-step breakdown table
+            steps = [
+                ("Raw input",               stats.get("raw", 0),                    0),
+                ("After hostname filter",   stats.get("after_hostname_filter", 0),  stats.get("raw", 0) - stats.get("after_hostname_filter", 0)),
+                ("After software filter",   stats.get("after_software_filter", 0),  stats.get("after_hostname_filter", 0) - stats.get("after_software_filter", 0)),
+                ("After deduplication",     stats.get("after_dedup", 0),            stats.get("after_software_filter", 0) - stats.get("after_dedup", 0)),
+            ]
+            step_df = pl.DataFrame({
+                "Step":          [s[0] for s in steps],
+                "Rows Remaining": [f"{s[1]:,}" for s in steps],
+                "Rows Removed":  [f"{s[2]:,}" if s[2] > 0 else "—" for s in steps],
+            })
+            st.dataframe(step_df.to_pandas(), use_container_width=True, hide_index=True)
+
+            # Summary metrics
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Unique Hostnames",    f"{stats.get('unique_hostnames', 0):,}")
+            m2.metric("Unique Technologies", f"{stats.get('unique_technologies', 0):,}")
+            total_removed = stats.get("raw", 0) - stats.get("after_dedup", 0)
+            pct = round(total_removed / max(stats.get("raw", 1), 1) * 100, 1)
+            m3.metric("Total Removed", f"{total_removed:,}  ({pct}%)")
+
+            # Preview
             with st.expander("Preview cleaned data (first 200 rows)"):
                 st.dataframe(
                     st.session_state.cleaned_df.head(200).to_pandas(),
                     use_container_width=True,
                 )
+
+            # Download cleaned file
+            st.divider()
+            st.subheader("Download Cleaned Data")
+            st.caption("Exports as CSV (no Excel row limit). Open in Excel via Data → From Text/CSV.")
+            if st.button("Prepare Download", key="prepare_clean_download"):
+                with st.spinner("Preparing CSV..."):
+                    csv_bytes = st.session_state.cleaned_df.write_csv().encode("utf-8")
+                    st.download_button(
+                        label="⬇️  Download device42_cleaned.csv",
+                        data=csv_bytes,
+                        file_name="device42_cleaned.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                    )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 3 — Match Technologies
