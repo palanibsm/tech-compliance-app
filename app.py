@@ -126,66 +126,77 @@ with tabs[0]:
         st.caption("Multi-tab Excel · Hostname, Software Name, Software Version")
         d42_file = st.file_uploader("Choose file", type=["xlsx", "xls"], key="up_d42")
         if d42_file:
-            try:
-                # Peek at sheet count first so progress bar is meaningful
-                import pandas as _pd
-                _xl = _pd.ExcelFile(d42_file)
-                total_sheets = len(_xl.sheet_names)
-                d42_file.seek(0)  # reset pointer after peek
+            # Only reload if a different file was uploaded (avoids re-processing on every rerun)
+            if st.session_state.get("d42_file_name") != d42_file.name or st.session_state.device42_df is None:
+                try:
+                    import pandas as _pd
+                    _xl = _pd.ExcelFile(d42_file)
+                    total_sheets = len(_xl.sheet_names)
+                    d42_file.seek(0)
 
-                progress_bar = st.progress(0, text="Reading sheet 1 of 0...")
-                status_text  = st.empty()
+                    progress_bar = st.progress(0, text="Starting...")
+                    status_text  = st.empty()
 
-                def d42_progress(current, total, sheet_name, rows_so_far):
-                    pct  = int(current / max(total, 1) * 100)
-                    text = (
-                        f"Reading tab **{current}/{total}** — `{sheet_name}` "
-                        f"({rows_so_far:,} rows loaded so far)  {pct}%"
-                    )
-                    progress_bar.progress(pct / 100, text=f"{pct}% — tab {current}/{total}: {sheet_name}")
-                    status_text.caption(text)
+                    def d42_progress(current, total, sheet_name, rows_so_far):
+                        pct = int(current / max(total, 1) * 100)
+                        progress_bar.progress(pct / 100, text=f"{pct}% — tab {current}/{total}: {sheet_name}")
+                        status_text.caption(
+                            f"Reading tab **{current}/{total}** — `{sheet_name}` "
+                            f"({rows_so_far:,} rows loaded so far)"
+                        )
 
-                st.session_state.device42_df = load_device42(d42_file, progress_callback=d42_progress)
-                progress_bar.empty()
-                status_text.empty()
+                    st.session_state.device42_df  = load_device42(d42_file, progress_callback=d42_progress)
+                    st.session_state.d42_file_name = d42_file.name
+                    progress_bar.empty()
+                    status_text.empty()
+                except Exception as e:
+                    st.error(str(e))
 
+            # Always show the success summary if data is loaded
+            if st.session_state.device42_df is not None:
                 count = len(st.session_state.device42_df)
-                st.success(f"Loaded **{count:,}** records across {total_sheets} tab(s)")
+                st.success(f"Loaded **{count:,}** records — `{st.session_state.d42_file_name}`")
                 st.dataframe(st.session_state.device42_df.head(5).to_pandas(), use_container_width=True)
-            except Exception as e:
-                st.error(str(e))
 
     with col2:
         st.subheader("Asset Inventory")
         st.caption("Filtered to SG/MY, PROD/DR, LIVE · Hostname → Application")
         asset_file = st.file_uploader("Choose file", type=["xlsx", "xls"], key="up_asset")
         if asset_file:
-            with st.spinner("Loading Asset Inventory..."):
-                try:
-                    st.session_state.asset_df = load_asset_inventory(asset_file)
-                    count = len(st.session_state.asset_df)
-                    st.success(f"Loaded **{count:,}** records after scope filter")
-                    st.dataframe(st.session_state.asset_df.head(5).to_pandas(), use_container_width=True)
-                except Exception as e:
-                    st.error(str(e))
+            if st.session_state.get("asset_file_name") != asset_file.name or st.session_state.asset_df is None:
+                with st.spinner("Loading Asset Inventory..."):
+                    try:
+                        st.session_state.asset_df       = load_asset_inventory(asset_file)
+                        st.session_state.asset_file_name = asset_file.name
+                    except Exception as e:
+                        st.error(str(e))
+
+            if st.session_state.asset_df is not None:
+                count = len(st.session_state.asset_df)
+                st.success(f"Loaded **{count:,}** records after scope filter — `{st.session_state.asset_file_name}`")
+                st.dataframe(st.session_state.asset_df.head(5).to_pandas(), use_container_width=True)
 
     with col3:
         st.subheader("EA Tool Export")
         st.caption("HOPEX / TA Export · can have multiple sheets")
         ea_file = st.file_uploader("Choose file", type=["xlsx", "xls"], key="up_ea")
         if ea_file:
-            with st.spinner("Loading EA Tool..."):
-                try:
-                    st.session_state.ea_sheets = load_ea_tool(ea_file)
-                    names = list(st.session_state.ea_sheets.keys())
-                    st.success(f"Loaded **{len(names)}** sheet(s): {', '.join(names)}")
-                    selected = st.selectbox("Preview sheet", names, key="ea_preview")
-                    st.dataframe(
-                        st.session_state.ea_sheets[selected].head(5).to_pandas(),
-                        use_container_width=True,
-                    )
-                except Exception as e:
-                    st.error(str(e))
+            if st.session_state.get("ea_file_name") != ea_file.name or st.session_state.ea_sheets is None:
+                with st.spinner("Loading EA Tool..."):
+                    try:
+                        st.session_state.ea_sheets    = load_ea_tool(ea_file)
+                        st.session_state.ea_file_name = ea_file.name
+                    except Exception as e:
+                        st.error(str(e))
+
+            if st.session_state.ea_sheets is not None:
+                names    = list(st.session_state.ea_sheets.keys())
+                st.success(f"Loaded **{len(names)}** sheet(s): {', '.join(names)} — `{st.session_state.ea_file_name}`")
+                selected = st.selectbox("Preview sheet", names, key="ea_preview")
+                st.dataframe(
+                    st.session_state.ea_sheets[selected].head(5).to_pandas(),
+                    use_container_width=True,
+                )
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TAB 2 — Process & Clean
