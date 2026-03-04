@@ -82,21 +82,36 @@ def _write_dataframe(ws, df: pl.DataFrame) -> None:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+EXCEL_MAX_ROWS = 1_048_575  # 1 row reserved for header
+
+
+def _iter_chunks(df: pl.DataFrame, chunk_size: int):
+    """Yield successive chunk_size slices of df."""
+    for start in range(0, len(df), chunk_size):
+        yield df.slice(start, chunk_size)
+
+
 def generate_report(sheets: dict[str, pl.DataFrame]) -> bytes:
     """
     Build a formatted Excel workbook with one sheet per entry in `sheets`.
+    DataFrames exceeding Excel's 1,048,576 row limit are automatically
+    split into numbered continuation sheets (Part 1, Part 2, …).
     Returns raw bytes suitable for st.download_button.
-
-    Args:
-        sheets: {sheet_name: polars_dataframe}
     """
     wb = Workbook()
     wb.remove(wb.active)  # remove the default blank sheet
 
     for sheet_name, df in sheets.items():
-        safe_name = sheet_name[:31]  # Excel sheet name limit
-        ws = wb.create_sheet(title=safe_name)
-        _write_dataframe(ws, df)
+        if len(df) <= EXCEL_MAX_ROWS:
+            ws = wb.create_sheet(title=sheet_name[:31])
+            _write_dataframe(ws, df)
+        else:
+            # Split into chunks and write as Part 1, Part 2, ...
+            for part, chunk in enumerate(_iter_chunks(df, EXCEL_MAX_ROWS), start=1):
+                base = sheet_name[:24]   # leave room for " (Pt X)"
+                title = f"{base} (Pt {part})"
+                ws = wb.create_sheet(title=title)
+                _write_dataframe(ws, chunk)
 
     buf = io.BytesIO()
     wb.save(buf)
