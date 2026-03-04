@@ -63,16 +63,22 @@ def _missing_cols(df: pd.DataFrame, required: set) -> set:
 
 # ── Public loaders ────────────────────────────────────────────────────────────
 
-def load_device42(file) -> pl.DataFrame:
+def load_device42(file, progress_callback=None) -> pl.DataFrame:
     """
     Load Device42 / Infinity technology feed.
     Reads ALL tabs and concatenates them.
     Expected columns: Hostname, Software Name, Software Version
+
+    Args:
+        progress_callback: optional fn(current_sheet, total_sheets, sheet_name, rows_loaded)
     """
     xl = pd.ExcelFile(file)
     frames = []
+    total = len(xl.sheet_names)
 
-    for sheet in xl.sheet_names:
+    for idx, sheet in enumerate(xl.sheet_names):
+        if progress_callback:
+            progress_callback(idx, total, sheet, sum(len(f) for f in frames))
         try:
             raw = pd.read_excel(xl, sheet_name=sheet, dtype=str)
             raw = _normalize_columns(raw, DEVICE42_COL_MAP)
@@ -83,6 +89,10 @@ def load_device42(file) -> pl.DataFrame:
             frames.append(raw[keep])
         except Exception:
             continue
+
+    # Final callback at 100%
+    if progress_callback:
+        progress_callback(total, total, "done", sum(len(f) for f in frames))
 
     if not frames:
         raise ValueError(

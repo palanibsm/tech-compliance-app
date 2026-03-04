@@ -126,14 +126,34 @@ with tabs[0]:
         st.caption("Multi-tab Excel · Hostname, Software Name, Software Version")
         d42_file = st.file_uploader("Choose file", type=["xlsx", "xls"], key="up_d42")
         if d42_file:
-            with st.spinner("Loading Device42 (reading all tabs)..."):
-                try:
-                    st.session_state.device42_df = load_device42(d42_file)
-                    count = len(st.session_state.device42_df)
-                    st.success(f"Loaded **{count:,}** records")
-                    st.dataframe(st.session_state.device42_df.head(5).to_pandas(), use_container_width=True)
-                except Exception as e:
-                    st.error(str(e))
+            try:
+                # Peek at sheet count first so progress bar is meaningful
+                import pandas as _pd
+                _xl = _pd.ExcelFile(d42_file)
+                total_sheets = len(_xl.sheet_names)
+                d42_file.seek(0)  # reset pointer after peek
+
+                progress_bar = st.progress(0, text="Reading sheet 1 of 0...")
+                status_text  = st.empty()
+
+                def d42_progress(current, total, sheet_name, rows_so_far):
+                    pct  = int(current / max(total, 1) * 100)
+                    text = (
+                        f"Reading tab **{current}/{total}** — `{sheet_name}` "
+                        f"({rows_so_far:,} rows loaded so far)  {pct}%"
+                    )
+                    progress_bar.progress(pct / 100, text=f"{pct}% — tab {current}/{total}: {sheet_name}")
+                    status_text.caption(text)
+
+                st.session_state.device42_df = load_device42(d42_file, progress_callback=d42_progress)
+                progress_bar.empty()
+                status_text.empty()
+
+                count = len(st.session_state.device42_df)
+                st.success(f"Loaded **{count:,}** records across {total_sheets} tab(s)")
+                st.dataframe(st.session_state.device42_df.head(5).to_pandas(), use_container_width=True)
+            except Exception as e:
+                st.error(str(e))
 
     with col2:
         st.subheader("Asset Inventory")
