@@ -357,7 +357,22 @@ elif step == 1:
                     file_name  = f"Technology Recon Process_{month_str}.xlsx"
                     sheet_name = f"PROD and DR from D42_{month_str}"
 
-                    xlsx_bytes = generate_report({sheet_name: st.session_state.cleaned_df})
+                    # Build output columns: rename internals, add Concatenated Technology
+                    out_df = st.session_state.cleaned_df.rename({
+                        "hostname":         "Hostname",
+                        "software_name":    "Software",
+                        "software_version": "Version",
+                    })
+                    out_df = out_df.with_columns(
+                        (pl.col("Software") + pl.lit(" ") + pl.col("Version"))
+                        .str.strip_chars()
+                        .alias("Concatenated Technology")
+                    )
+                    # Keep only the four required columns in order
+                    out_cols = [c for c in ["Hostname", "Software", "Version", "Concatenated Technology"] if c in out_df.columns]
+                    out_df = out_df.select(out_cols)
+
+                    xlsx_bytes = generate_report({sheet_name: out_df})
                     st.download_button(
                         label=f"⬇️  Download {file_name}",
                         data=xlsx_bytes,
