@@ -145,8 +145,9 @@ with tabs[0]:
                             f"({rows_so_far:,} rows loaded so far)"
                         )
 
-                    st.session_state.device42_df  = load_device42(d42_file, progress_callback=d42_progress)
-                    st.session_state.d42_file_name = d42_file.name
+                    with st.spinner("Loading Device42 feed — please wait..."):
+                        st.session_state.device42_df  = load_device42(d42_file, progress_callback=d42_progress)
+                        st.session_state.d42_file_name = d42_file.name
                     progress_bar.empty()
                     status_text.empty()
                 except Exception as e:
