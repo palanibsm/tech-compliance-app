@@ -456,6 +456,30 @@ elif step == 2:
             with view_b:
                 st.dataframe(df_res.to_pandas(), use_container_width=True, height=400)
 
+            st.divider()
+            st.subheader("Download Match Results")
+            if st.button("Prepare Download", key="prepare_match_download"):
+                with st.spinner("Preparing Excel file..."):
+                    import calendar
+                    from datetime import date
+                    today      = date.today()
+                    prev_month = today.month - 1 or 12
+                    prev_year  = today.year if today.month > 1 else today.year - 1
+                    month_str  = f"{calendar.month_abbr[prev_month].upper()}-{prev_year}"
+                    file_name  = f"Technology Match Results_{month_str}.xlsx"
+
+                    xlsx_bytes = generate_report({
+                        f"All Results_{month_str}":      df_res,
+                        f"Unmatched_{month_str}":        unmatched,
+                    })
+                    st.download_button(
+                        label=f"⬇️  Download {file_name}",
+                        data=xlsx_bytes,
+                        file_name=file_name,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+
     nav_buttons(step)
 
 # ─────────────────────────────────────────────────────────────────────────────
