@@ -348,11 +348,20 @@ elif step == 1:
             st.caption("Exports as Excel. Auto-splits into multiple tabs if rows exceed 1,048,575.")
             if st.button("Prepare Download", key="prepare_clean_download"):
                 with st.spinner("Preparing Excel file..."):
-                    xlsx_bytes = generate_report({"Device42 Cleaned": st.session_state.cleaned_df})
+                    import calendar
+                    from datetime import date
+                    today = date.today()
+                    prev_month = today.month - 1 or 12
+                    prev_year  = today.year if today.month > 1 else today.year - 1
+                    month_str  = f"{calendar.month_abbr[prev_month].upper()}-{prev_year}"
+                    file_name  = f"Technology Recon Process_{month_str}.xlsx"
+                    sheet_name = f"PROD and DR from D42_{month_str}"
+
+                    xlsx_bytes = generate_report({sheet_name: st.session_state.cleaned_df})
                     st.download_button(
-                        label="⬇️  Download device42_cleaned.xlsx",
+                        label=f"⬇️  Download {file_name}",
                         data=xlsx_bytes,
-                        file_name="device42_cleaned.xlsx",
+                        file_name=file_name,
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         use_container_width=True,
                     )
