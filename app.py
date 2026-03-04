@@ -82,6 +82,7 @@ STEP_LABELS = [
 
 def go_to(step: int):
     st.session_state.current_step = step
+    st.session_state["_nav_idx"] = step  # keep radio widget in sync
     st.rerun()
 
 
@@ -108,20 +109,18 @@ with st.sidebar:
     st.caption("Technology Version Compliance & Obsolescence Management")
     st.divider()
 
-    # Step navigation
+    # Step navigation — use integer indices so label text changes (✅/⏳) don't break state
     st.subheader("Steps")
-    selected_label = st.radio(
+    if "_nav_idx" not in st.session_state:
+        st.session_state["_nav_idx"] = 0
+    chosen = st.radio(
         "Navigate",
-        STEP_LABELS,
-        index=st.session_state.current_step,
-        key="nav_radio",
+        options=list(range(len(STEP_NAMES))),
+        format_func=lambda i: STEP_LABELS[i],
+        key="_nav_idx",
         label_visibility="collapsed",
     )
-    # Sync current_step from radio (handles direct sidebar clicks)
-    selected_idx = STEP_LABELS.index(selected_label)
-    if selected_idx != st.session_state.current_step:
-        st.session_state.current_step = selected_idx
-        st.rerun()
+    st.session_state.current_step = chosen
 
     st.divider()
 
