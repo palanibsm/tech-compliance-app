@@ -347,38 +347,45 @@ elif step == 1:
             st.caption("Exports as Excel. Auto-splits into multiple tabs if rows exceed 1,048,575.")
             if st.button("Prepare Download", key="prepare_clean_download"):
                 with st.spinner("Preparing Excel file..."):
-                    import calendar
-                    from datetime import date
-                    today = date.today()
-                    prev_month = today.month - 1 or 12
-                    prev_year  = today.year if today.month > 1 else today.year - 1
-                    month_str  = f"{calendar.month_abbr[prev_month].upper()}-{prev_year}"
-                    file_name  = f"Technology Recon Process_{month_str}.xlsx"
-                    sheet_name = f"PROD and DR from D42_{month_str}"
+                    try:
+                        import calendar
+                        from datetime import date
+                        today = date.today()
+                        prev_month = today.month - 1 or 12
+                        prev_year  = today.year if today.month > 1 else today.year - 1
+                        month_str  = f"{calendar.month_abbr[prev_month].upper()}-{prev_year}"
+                        file_name  = f"Technology Recon Process_{month_str}.xlsx"
+                        sheet_name = f"PROD and DR from D42_{month_str}"
 
-                    # Build output columns: rename internals, add Concatenated Technology
-                    out_df = st.session_state.cleaned_df.rename({
-                        "hostname":         "Hostname",
-                        "software_name":    "Software",
-                        "software_version": "Version",
-                    })
-                    out_df = out_df.with_columns(
-                        (pl.col("Software") + pl.lit(" ") + pl.col("Version"))
-                        .str.strip_chars()
-                        .alias("Concatenated Technology")
-                    )
-                    # Keep only the four required columns in order
-                    out_cols = [c for c in ["Hostname", "Software", "Version", "Concatenated Technology"] if c in out_df.columns]
-                    out_df = out_df.select(out_cols)
+                        # Build output columns: rename internals, add Concatenated Technology
+                        out_df = st.session_state.cleaned_df.rename({
+                            "hostname":         "Hostname",
+                            "software_name":    "Software",
+                            "software_version": "Version",
+                        })
+                        out_df = out_df.with_columns(
+                            (pl.col("Software") + pl.lit(" ") + pl.col("Version"))
+                            .str.strip_chars()
+                            .alias("Concatenated Technology")
+                        )
+                        out_cols = [c for c in ["Hostname", "Software", "Version", "Concatenated Technology"] if c in out_df.columns]
+                        out_df = out_df.select(out_cols)
 
-                    xlsx_bytes = generate_report({sheet_name: out_df})
-                    st.download_button(
-                        label=f"⬇️  Download {file_name}",
-                        data=xlsx_bytes,
-                        file_name=file_name,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
+                        st.session_state["clean_dl_bytes"] = generate_report({sheet_name: out_df})
+                        st.session_state["clean_dl_name"]  = file_name
+                    except Exception as e:
+                        st.error(f"Failed to prepare download: {e}")
+                        st.code(traceback.format_exc())
+
+            if st.session_state.get("clean_dl_bytes"):
+                st.download_button(
+                    label=f"⬇️  Download {st.session_state['clean_dl_name']}",
+                    data=st.session_state["clean_dl_bytes"],
+                    file_name=st.session_state["clean_dl_name"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_clean",
+                )
 
     nav_buttons(step)
 
@@ -459,25 +466,33 @@ elif step == 2:
             st.subheader("Download Match Results")
             if st.button("Prepare Download", key="prepare_match_download"):
                 with st.spinner("Preparing Excel file..."):
-                    import calendar
-                    from datetime import date
-                    today      = date.today()
-                    prev_month = today.month - 1 or 12
-                    prev_year  = today.year if today.month > 1 else today.year - 1
-                    month_str  = f"{calendar.month_abbr[prev_month].upper()}-{prev_year}"
-                    file_name  = f"Technology Match Results_{month_str}.xlsx"
+                    try:
+                        import calendar
+                        from datetime import date
+                        today      = date.today()
+                        prev_month = today.month - 1 or 12
+                        prev_year  = today.year if today.month > 1 else today.year - 1
+                        month_str  = f"{calendar.month_abbr[prev_month].upper()}-{prev_year}"
+                        file_name  = f"Technology Match Results_{month_str}.xlsx"
 
-                    xlsx_bytes = generate_report({
-                        f"All Results_{month_str}":      df_res,
-                        f"Unmatched_{month_str}":        unmatched,
-                    })
-                    st.download_button(
-                        label=f"⬇️  Download {file_name}",
-                        data=xlsx_bytes,
-                        file_name=file_name,
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        use_container_width=True,
-                    )
+                        st.session_state["match_dl_bytes"] = generate_report({
+                            f"All Results_{month_str}":  df_res,
+                            f"Unmatched_{month_str}":    unmatched,
+                        })
+                        st.session_state["match_dl_name"] = file_name
+                    except Exception as e:
+                        st.error(f"Failed to prepare download: {e}")
+                        st.code(traceback.format_exc())
+
+            if st.session_state.get("match_dl_bytes"):
+                st.download_button(
+                    label=f"⬇️  Download {st.session_state['match_dl_name']}",
+                    data=st.session_state["match_dl_bytes"],
+                    file_name=st.session_state["match_dl_name"],
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                    key="dl_match",
+                )
 
     nav_buttons(step)
 
